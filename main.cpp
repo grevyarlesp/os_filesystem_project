@@ -1,7 +1,7 @@
 #include <windows.h>
 #include <stdio.h>
 #include <iostream>
-
+#pragma pack(1)
 typedef struct fat_BS
 {
     unsigned char 		bootjmp[3];
@@ -33,7 +33,8 @@ typedef struct fat_BS
     unsigned int 		volume_id;
     unsigned char		volume_label[11];
     unsigned char		fat_type_label[8];
-}__attribute__((packed)) *pFat_BS_T;
+} *pFat_BS_T;
+#pragma pack()
 
 int ReadSector(const char*  drive, int readPoint, BYTE sector[512])
 {

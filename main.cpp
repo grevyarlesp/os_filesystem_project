@@ -136,20 +136,17 @@ bool readRDET(HANDLE device) {
             //std::cout << "x";
              if (buffer[pos] == 0xE5) {
                  // Unused
-                 current_byte += 32;
                  continue;
              }
              if (buffer[pos + 11] == 0x0F) { // Long File Name
                  pLongFileName1 = (pLongFileName) (buffer + pos);
-                 //printWStr(pLongFileName1->name, 0, 5);
-                 //std::cout << '\n';
+                 printWStr(pLongFileName1->name, 0, 5);
+                 std::cout << '\n';
                  lfn = true;
-                 current_byte += 32;
              } else {  // Not Long File Name
                  pDirEntry1 = (pDirEntry) (buffer + pos);
                  if (lfn) {
                      lfn = false;
-                     current_byte += 32;
                      continue;
                  } else {
                      //std::cout << pDirEntry1->name << '\n';
@@ -158,40 +155,10 @@ bool readRDET(HANDLE device) {
                      printStr(pDirEntry1->name, 8, 3);
                      std::cout << '\n';
                  }
-                 current_byte += 32;
              }
         }
         current_sector += 1;
     }
-    // do {
-    //     SetFilePointer(device, current_byte, NULL, FILE_BEGIN);
-    //     if (!ReadFile(device, buffer, 512, &byteCount, NULL)) {
-    //         printf("ReadFile: %u\n", GetLastError());
-    //         return false;
-    //     }
-    //     if (buffer[0] == 0) break;
-
-    //     if (buffer[0] == 0xE5) {
-    //         // Unused
-    //         current_byte += 32;
-    //         continue;
-    //     }
-    //     if (buffer[11] == 0x0F) { // Long File Name
-    //         pLongFileName1 = (pLongFileName) buffer;
-    //         std::cout << pLongFileName1->name << '\n';
-    //         lfn = true;
-    //         current_byte += 32;
-    //     } else {  // Not Long File Name
-    //         pDirEntry1 = (pDirEntry) buffer;
-    //         if (lfn) {
-    //             lfn = false;
-    //             current_byte += 32;
-    //             continue;
-    //         }
-    //         std::cout << pDirEntry1->name << '\n';
-    //         current_byte += 32;
-    //     }
-    // } while (true);
 
     return true;
 }

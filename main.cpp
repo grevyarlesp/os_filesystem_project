@@ -135,7 +135,6 @@ bool readRDET(HANDLE device) {
                 finished = true;
                 break;
             }
-            //std::cout << "x";
              if (buffer[pos] == 0xE5) {
                  // Unused
                  continue;
@@ -155,18 +154,16 @@ bool readRDET(HANDLE device) {
                  lfn = true;
              } else {  // Not Long File Name
                  pDirEntry1 = (pDirEntry) (buffer + pos);
+                 //std::cout << pDirEntry1->name << '\n';
+                 printStr(pDirEntry1->name, 0, 8);
+                 std::cout << ".";
                  if (lfn) {
-                     lfn = false;
                      std::wcout << tmp << '\n';
+                     lfn = false;
                      tmp.clear();
-                     continue;
-                 } else {
-                     //std::cout << pDirEntry1->name << '\n';
-                     printStr(pDirEntry1->name, 0, 8);
-                     std::cout << ".";
-                     printStr(pDirEntry1->name, 8, 3);
-                     std::cout << '\n';
                  }
+                 printStr(pDirEntry1->name, 8, 3);
+                 std::cout << '\n';
              }
         }
         current_sector += 1;

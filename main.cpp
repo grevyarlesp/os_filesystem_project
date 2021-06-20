@@ -58,8 +58,8 @@ typedef struct LongFileName {
     uint8_t type; //
     uint8_t checksum;
     WCHAR name2[6];
-    uint8_t zero; // always zero
-    WCHAR name3[4];
+    uint16_t zero; // always zero
+    WCHAR name3[2];
 } *pLongFileName, LongFileName;
 #pragma pack()
 
@@ -124,6 +124,8 @@ bool readRDET(HANDLE device) {
 //    std::cout << first_sector_of_cluster << '\n';
      current_byte = first_sector_of_cluster * pFat_boot->bytes_per_sector;
     // readSector(device, 29536, 1, buffer);
+    std::wstring tmp;
+    std::cout << sizeof(LongFileName) << '\n';
 
     while (! finished) {
         SetFilePointer(device, current_sector * pFat_boot->bytes_per_sector, NULL, FILE_BEGIN);
@@ -140,13 +142,23 @@ bool readRDET(HANDLE device) {
              }
              if (buffer[pos + 11] == 0x0F) { // Long File Name
                  pLongFileName1 = (pLongFileName) (buffer + pos);
-                 printWStr(pLongFileName1->name, 0, 5);
-                 std::cout << '\n';
+                 //std::cout << "Long file name: ";
+                 for (int i = 0; i < 5; ++i) {
+                    tmp.push_back(pLongFileName1->name[i]);
+                 }
+                 for (int i = 0; i < 6; ++i) {
+                     tmp.push_back(pLongFileName1->name2[i]);
+                 }
+                 for (int i = 0; i < 2; ++i) {
+                     tmp.push_back(pLongFileName1->name3[i]);
+                 }
                  lfn = true;
              } else {  // Not Long File Name
                  pDirEntry1 = (pDirEntry) (buffer + pos);
                  if (lfn) {
                      lfn = false;
+                     std::wcout << tmp << '\n';
+                     tmp.clear();
                      continue;
                  } else {
                      //std::cout << pDirEntry1->name << '\n';

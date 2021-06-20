@@ -8,18 +8,18 @@ typedef struct fat_BS {
     unsigned char oem_name[8];
     unsigned short bytes_per_sector;
     uint8_t sectors_per_cluster;
-    unsigned short reserved_sector_count;
-    unsigned char table_count;
-    unsigned short root_entry_count;
+    uint16_t reserved_sector_count;
+    uint8_t table_count;
+    uint16_t root_entry_count;
     unsigned short total_sectors_16;
     unsigned char media_type;
-    unsigned short table_size_16;
+    uint16_t table_size_16;
     unsigned short sectors_per_track;
     unsigned short head_side_count;
     unsigned int hidden_sector_count;
     unsigned int total_sectors_32;
     //extended fat32 stuff
-    unsigned int sectors_per_fat;
+    unsigned int table_size_32; // fat32 table size
     unsigned short flags;
     unsigned short fat_version;
     unsigned int root_cluster_number;
@@ -35,12 +35,52 @@ typedef struct fat_BS {
     uint8_t boot_code[420];
     unsigned short bootable_signature;
 } *pFat_BS_T;
+
+typedef struct DirectoryEntry {
+    char name[11];
+    uint8_t attrib;
+    uint8_t reserved;
+    uint8_t creation_time_dcs;
+    uint16_t creation_date;
+    uint16_t creation_time;
+    uint16_t last_accessed;
+    uint16_t first_cluster_high;
+    uint16_t last_mod_time;
+    uint16_t last_mod_date;
+    uint16_t first_cluster_low;
+    uint32_t size;
+} *pDirEntry, DirEntry;
+
+typedef struct LongFileName {
+    uint8_t order;
+    WCHAR name[5];
+    uint8_t attrib;// 0x0F
+    uint8_t type; //
+    uint8_t checksum;
+    WCHAR name2[6];
+    uint8_t zero; // always zero
+    WCHAR name3[4];
+} *pLongFileName, LongFileName;
 #pragma pack()
 
 HANDLE device;
 
 pFat_BS_T pFat_boot;
-uint8_t* pFat;
+pDirEntry pDir;
+uint8_t *pFat;
+
+
+void printStr(const char* s, int l, int num) {
+    for (int i = l; i < l + num; ++i) {
+        std::cout << s[i];
+    }
+}
+
+void printWStr(const WCHAR* s, int l, int num) {
+    for (int i = l; i < l + num; ++i) {
+        std::wcout << s[i];
+    }
+}
 
 bool readBootSector(HANDLE device) {
     pFat_boot = (pFat_BS_T) malloc(512);
@@ -49,14 +89,11 @@ bool readBootSector(HANDLE device) {
     return ReadFile(device, pFat_boot, 512, &bytesRead, NULL);
 }
 
-bool readSector(HANDLE device, int readPoint, int sectorCount, uint8_t* sector) {
+bool readSector(HANDLE device, int sectorToRead, int sectorCount, uint8_t *sector) {
     DWORD bytesRead;
     int retCode = 0;
-    if (device == INVALID_HANDLE_VALUE) {
-        printf("Error: %u\n", GetLastError());
-        return 0;
-    }
-    SetFilePointer(device, readPoint, NULL, FILE_BEGIN);//Set a Point to Read
+
+    SetFilePointer(device, sectorToRead * pFat_boot->bytes_per_sector, NULL, FILE_BEGIN);//Set a Point to Read
     if (!ReadFile(device, sector, sectorCount * pFat_boot->bytes_per_sector, &bytesRead, NULL)) {
         //printf("ReadFile: %u\n", GetLastError());
         return 0;
@@ -67,10 +104,101 @@ bool readSector(HANDLE device, int readPoint, int sectorCount, uint8_t* sector) 
 }
 
 
+bool readRDET(HANDLE device) {
+    unsigned int root_dir_sector = 0;
+    unsigned int first_data_sector =
+            pFat_boot->reserved_sector_count + (pFat_boot->table_count * pFat_boot->table_size_32) + root_dir_sector;
+    unsigned int root_cluster = pFat_boot->root_cluster_number;
+    unsigned int size = sizeof(DirectoryEntry) * pFat_boot->root_entry_count;
+    unsigned int first_sector_of_cluster = ((root_cluster - 2) * pFat_boot->sectors_per_cluster) + first_data_sector;
+    unsigned int current_cluster = root_cluster;
+    unsigned int current_sector = first_data_sector;
+    unsigned int current_byte = current_sector * pFat_boot->bytes_per_sector;
+    DWORD byteCount;
+
+    BYTE buffer[512];
+    auto pLongFileName1 = (pLongFileName) malloc(sizeof(LongFileName));
+    bool lfn = false;
+    bool finished = false;
+    auto pDirEntry1 = (pDirEntry) malloc(sizeof(DirEntry));
+//    std::cout << first_sector_of_cluster << '\n';
+     current_byte = first_sector_of_cluster * pFat_boot->bytes_per_sector;
+    // readSector(device, 29536, 1, buffer);
+
+    while (! finished) {
+        SetFilePointer(device, current_sector * pFat_boot->bytes_per_sector, NULL, FILE_BEGIN);
+        readSector(device, current_sector, 1, buffer);
+        for (int i = 0, pos = 0; i < pFat_boot->bytes_per_sector / sizeof(DirEntry); ++i, pos += sizeof(DirEntry)) {
+            if (buffer[pos] == 0) {
+                finished = true;
+                break;
+            }
+            //std::cout << "x";
+             if (buffer[pos] == 0xE5) {
+                 // Unused
+                 current_byte += 32;
+                 continue;
+             }
+             if (buffer[pos + 11] == 0x0F) { // Long File Name
+                 pLongFileName1 = (pLongFileName) (buffer + pos);
+                 //printWStr(pLongFileName1->name, 0, 5);
+                 //std::cout << '\n';
+                 lfn = true;
+                 current_byte += 32;
+             } else {  // Not Long File Name
+                 pDirEntry1 = (pDirEntry) (buffer + pos);
+                 if (lfn) {
+                     lfn = false;
+                     current_byte += 32;
+                     continue;
+                 } else {
+                     //std::cout << pDirEntry1->name << '\n';
+                     printStr(pDirEntry1->name, 0, 8);
+                     std::cout << ".";
+                     printStr(pDirEntry1->name, 8, 3);
+                     std::cout << '\n';
+                 }
+                 current_byte += 32;
+             }
+        }
+        current_sector += 1;
+    }
+    // do {
+    //     SetFilePointer(device, current_byte, NULL, FILE_BEGIN);
+    //     if (!ReadFile(device, buffer, 512, &byteCount, NULL)) {
+    //         printf("ReadFile: %u\n", GetLastError());
+    //         return false;
+    //     }
+    //     if (buffer[0] == 0) break;
+
+    //     if (buffer[0] == 0xE5) {
+    //         // Unused
+    //         current_byte += 32;
+    //         continue;
+    //     }
+    //     if (buffer[11] == 0x0F) { // Long File Name
+    //         pLongFileName1 = (pLongFileName) buffer;
+    //         std::cout << pLongFileName1->name << '\n';
+    //         lfn = true;
+    //         current_byte += 32;
+    //     } else {  // Not Long File Name
+    //         pDirEntry1 = (pDirEntry) buffer;
+    //         if (lfn) {
+    //             lfn = false;
+    //             current_byte += 32;
+    //             continue;
+    //         }
+    //         std::cout << pDirEntry1->name << '\n';
+    //         current_byte += 32;
+    //     }
+    // } while (true);
+
+    return true;
+}
 
 bool readFat(HANDLE device) {
-    pFat = (uint8_t*) malloc(pFat_boot->sectors_per_fat * pFat_boot->bytes_per_sector);
-    return readSector(device, pFat_boot->__reserved, pFat_boot->bytes_per_sector, (BYTE*) pFat);
+    pFat = (uint8_t *) malloc(pFat_boot->table_size_32 * pFat_boot->bytes_per_sector);
+    //return readSector(device, pFat_boot->__reserved, pFat_boot->bytes_per_sector, (BYTE*) pFat);
 }
 
 int main(int argc, char **argv) {
@@ -82,16 +210,15 @@ int main(int argc, char **argv) {
                         0,                      // File attributes
                         NULL);                  // Handle to template
 
-    if (! readBootSector(device)) {
+    if (!readBootSector(device)) {
         std::cout << "Failed to read disk\n";
         return -1;
-    } else
-        if (pFat_boot->bootable_signature == 0xAA55)
-            std::cout << "Bootable signature found ! Success!!!\n";
-    std::cout << pFat_boot->oem_name << '\n';
-    std::cout << (int) pFat_boot->sectors_per_fat << '\n';
-    if (! readFat(device)) {
-        std::cout << "Reading FAT failed!!";
+    } else if (pFat_boot->bootable_signature == 0xAA55)
+        std::cout << "Bootable signature found ! Success!!!\n";
+    std::cout << (int) pFat_boot->table_size_32 << '\n';
+
+    if (!readRDET(device)) {
+        std::cout << "Failed to read RDET";
         return -1;
     }
 

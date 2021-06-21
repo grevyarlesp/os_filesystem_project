@@ -224,8 +224,6 @@ int main(int argc, char **argv) {
         return -1;
     } else if (pFat_boot->bootable_signature == 0xAA55)
         std::cout << "Bootable signature found ! Success!!!\n";
-    std::cout << (int) pFat_boot->table_size_32 << '\n';
-
     if (!readRDET(device)) {
         std::cout << "Failed to read RDET";
         return -1;

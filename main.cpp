@@ -1,6 +1,8 @@
 #include <windows.h>
-#include <stdio.h>
+#include <cstdio>
 #include <iostream>
+#include <io.h>
+#include <fcntl.h>
 
 #pragma pack(1)
 typedef struct fat_BS {
@@ -70,13 +72,14 @@ pDirEntry pDir;
 uint8_t *pFat;
 
 
-void printStr(const char* s, int l, int num) {
+void printStr(const char *s, int l, int num) {
     for (int i = l; i < l + num; ++i) {
+        if (s[i] == ' ') continue;
         std::cout << s[i];
     }
 }
 
-void printWStr(const WCHAR* s, int l, int num) {
+void printWStr(const WCHAR *s, int l, int num) {
     for (int i = l; i < l + num; ++i) {
         std::wcout << s[i];
     }
@@ -89,7 +92,7 @@ bool readBootSector(HANDLE device) {
     return ReadFile(device, pFat_boot, 512, &bytesRead, NULL);
 }
 
-bool readSector(HANDLE device, int sectorToRead, int sectorCount, uint8_t *sector) {
+bool readSector(HANDLE device, unsigned int sectorToRead, int sectorCount, uint8_t *sector) {
     DWORD bytesRead;
     int retCode = 0;
 
@@ -100,6 +103,20 @@ bool readSector(HANDLE device, int sectorToRead, int sectorCount, uint8_t *secto
     } else {
         //printf("Success!\n");
         return 1;
+    }
+}
+
+void hexdump(BYTE *buffer, int num) {
+    for (int i = 0; i < num; ++i) {
+        std::cout << std::hex << (int) buffer[i];
+        std::cout << ' ';
+    }
+}
+
+void hexdump(WCHAR *buffer, int num) {
+    for (int i = 0; i < num; ++i) {
+        std::cout << std::hex << (int) buffer[i];
+        std::cout << ' ';
     }
 }
 
@@ -116,59 +133,75 @@ bool readRDET(HANDLE device) {
     unsigned int current_byte = current_sector * pFat_boot->bytes_per_sector;
     DWORD byteCount;
 
-    BYTE buffer[512];
+    BYTE *buffer = (BYTE *) malloc(512);
     auto pLongFileName1 = (pLongFileName) malloc(sizeof(LongFileName));
     bool lfn = false;
     bool finished = false;
     auto pDirEntry1 = (pDirEntry) malloc(sizeof(DirEntry));
-//    std::cout << first_sector_of_cluster << '\n';
-     current_byte = first_sector_of_cluster * pFat_boot->bytes_per_sector;
-    // readSector(device, 29536, 1, buffer);
-    std::wstring tmp;
-    std::cout << sizeof(LongFileName) << '\n';
-
-    while (! finished) {
-        SetFilePointer(device, current_sector * pFat_boot->bytes_per_sector, NULL, FILE_BEGIN);
-        readSector(device, current_sector, 1, buffer);
+    current_byte = first_sector_of_cluster * pFat_boot->bytes_per_sector;
+    std::wstring tmp[20];
+    while (!finished) {
+        if (!readSector(device, current_sector, 1, buffer)) {
+            return false;
+        }
+        int last = -1;
         for (int i = 0, pos = 0; i < pFat_boot->bytes_per_sector / sizeof(DirEntry); ++i, pos += sizeof(DirEntry)) {
-            if (buffer[pos] == 0) {
+            if (buffer[pos] == 0x00) {
+//                std::cout << current_sector << ' '  << '\n';
+//                hexdump(buffer, 512);
                 finished = true;
                 break;
             }
-             if (buffer[pos] == 0xE5) {
-                 // Unused
-                 continue;
-             }
-             if (buffer[pos + 11] == 0x0F) { // Long File Name
-                 pLongFileName1 = (pLongFileName) (buffer + pos);
-                 //std::cout << "Long file name: ";
-                 for (int i = 0; i < 5; ++i) {
-                    tmp.push_back(pLongFileName1->name[i]);
-                 }
-                 for (int i = 0; i < 6; ++i) {
-                     tmp.push_back(pLongFileName1->name2[i]);
-                 }
-                 for (int i = 0; i < 2; ++i) {
-                     tmp.push_back(pLongFileName1->name3[i]);
-                 }
-                 lfn = true;
-             } else {  // Not Long File Name
-                 pDirEntry1 = (pDirEntry) (buffer + pos);
-                 //std::cout << pDirEntry1->name << '\n';
-                 printStr(pDirEntry1->name, 0, 8);
-                 std::cout << ".";
-                 if (lfn) {
-                     std::wcout << tmp << '\n';
-                     lfn = false;
-                     tmp.clear();
-                 }
-                 printStr(pDirEntry1->name, 8, 3);
-                 std::cout << '\n';
-             }
+            if (buffer[pos] == 0xE5) {
+                // Unused
+                continue;
+            }
+            if (buffer[pos + 11] == 0x0F) { // Long File Name
+                pLongFileName1 = (pLongFileName) (buffer + pos);
+                lfn = true;
+                //std::cout << "Long file name: ";
+                if (((pLongFileName1->order & 0xF0) >> 4) == 4) last = pLongFileName1->order & 0x0F;
+                int order = (pLongFileName1->order & 0x0F) - 1;
+                for (int i = 0; i < 5; ++i) {
+                    if (pLongFileName1->name[i] == 0xFFFF) {
+                        break;
+                    }
+                    tmp[order].push_back(pLongFileName1->name[i]);
+                }
+                for (int i = 0; i < 6; ++i) {
+                    if (pLongFileName1->name2[i] == 0xFFFF) {
+                        break;
+                    }
+                    tmp[order].push_back(pLongFileName1->name2[i]);
+                }
+                for (int i = 0; i < 2; ++i) {
+                    if (pLongFileName1->name3[i] == 0xFFFF) {
+                        break;
+                    }
+                    tmp[order].push_back(pLongFileName1->name3[i]);
+                }
+            } else {  // Not Long File Name
+                if (lfn) { // Have a long file name in storage
+                    std::string tmpa;
+                    for (int j = 0; j < last; ++j) {
+                        tmpa = std::string(tmp[j].begin(), tmp[j].end());
+                        std::cout << tmpa;
+                        tmp[j].clear();
+                    }
+                    lfn = false;
+                    std::cout << '\n';
+                    continue;
+                }
+                pDirEntry1 = (pDirEntry) (buffer + pos);
+                printStr(pDirEntry1->name, 0, 8);
+                std::cout << ".";
+                printStr(pDirEntry1->name, 8, 3);
+                std::cout << '\n';
+            }
         }
         current_sector += 1;
     }
-
+    free(buffer);
     return true;
 }
 

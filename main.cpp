@@ -1,8 +1,9 @@
 #include <windows.h>
 #include <cstdio>
 #include <iostream>
-#include <io.h>
+#include <string>
 #include <fcntl.h>
+#include <io.h>
 
 #pragma pack(1)
 typedef struct fat_BS {
@@ -55,34 +56,26 @@ typedef struct DirectoryEntry {
 
 typedef struct LongFileName {
     uint8_t order;
-    WCHAR name[5];
+    wchar_t name[5];
     uint8_t attrib;// 0x0F
     uint8_t type; //
     uint8_t checksum;
-    WCHAR name2[6];
+    wchar_t name2[6];
     uint16_t zero; // always zero
-    WCHAR name3[2];
+    wchar_t name3[2];
 } *pLongFileName, LongFileName;
 #pragma pack()
 
 HANDLE device;
-
 pFat_BS_T pFat_boot;
 pDirEntry pDir;
 uint8_t *pFat;
 
-
 void printStr(const char *s, int l, int num) {
-    for (int i = l; i < l + num; ++i) {
-        if (s[i] == ' ') continue;
-        std::cout << s[i];
-    }
-}
-
-void printWStr(const WCHAR *s, int l, int num) {
-    for (int i = l; i < l + num; ++i) {
-        std::wcout << s[i];
-    }
+    wchar_t* wc = new wchar_t[num];
+    mbstowcs (wc, s + l, num);
+    for (int i = 0; i < num; ++i)
+        std::wcout << wc[i];
 }
 
 bool readBootSector(HANDLE device) {
@@ -108,18 +101,17 @@ bool readSector(HANDLE device, unsigned int sectorToRead, int sectorCount, uint8
 
 void hexdump(BYTE *buffer, int num) {
     for (int i = 0; i < num; ++i) {
-        std::cout << std::hex << (int) buffer[i];
-        std::cout << ' ';
+        std::wcout << std::hex << (int) buffer[i];
+        std::wcout << ' ';
     }
 }
 
 void hexdump(WCHAR *buffer, int num) {
     for (int i = 0; i < num; ++i) {
-        std::cout << std::hex << (int) buffer[i];
-        std::cout << ' ';
+        std::wcout << std::hex << (int) buffer[i];
+        std::wcout << ' ';
     }
 }
-
 
 bool readRDET(HANDLE device) {
     unsigned int root_dir_sector = 0;
@@ -147,8 +139,6 @@ bool readRDET(HANDLE device) {
         int last = -1;
         for (int i = 0, pos = 0; i < pFat_boot->bytes_per_sector / sizeof(DirEntry); ++i, pos += sizeof(DirEntry)) {
             if (buffer[pos] == 0x00) {
-//                std::cout << current_sector << ' '  << '\n';
-//                hexdump(buffer, 512);
                 finished = true;
                 break;
             }
@@ -159,7 +149,7 @@ bool readRDET(HANDLE device) {
             if (buffer[pos + 11] == 0x0F) { // Long File Name
                 pLongFileName1 = (pLongFileName) (buffer + pos);
                 lfn = true;
-                //std::cout << "Long file name: ";
+                //std::wcout << "Long file name: ";
                 if (((pLongFileName1->order & 0xF0) >> 4) == 4) last = pLongFileName1->order & 0x0F;
                 int order = (pLongFileName1->order & 0x0F) - 1;
                 for (int i = 0; i < 5; ++i) {
@@ -182,21 +172,19 @@ bool readRDET(HANDLE device) {
                 }
             } else {  // Not Long File Name
                 if (lfn) { // Have a long file name in storage
-                    std::string tmpa;
                     for (int j = 0; j < last; ++j) {
-                        tmpa = std::string(tmp[j].begin(), tmp[j].end());
-                        std::cout << tmpa;
+                        std::wcout << tmp[j];
                         tmp[j].clear();
                     }
                     lfn = false;
-                    std::cout << '\n';
+                    std::wcout << '\n';
                     continue;
                 }
                 pDirEntry1 = (pDirEntry) (buffer + pos);
                 printStr(pDirEntry1->name, 0, 8);
-                std::cout << ".";
+                std::wcout << ".";
                 printStr(pDirEntry1->name, 8, 3);
-                std::cout << '\n';
+                std::wcout << '\n';
             }
         }
         current_sector += 1;
@@ -211,6 +199,7 @@ bool readFat(HANDLE device) {
 }
 
 int main(int argc, char **argv) {
+    _setmode(_fileno(stdout), 0x00020000); // _O_U16TEXT
     device = CreateFile("\\\\.\\F:",    // Drive to open
                         GENERIC_READ,           // Access mode
                         FILE_SHARE_READ | FILE_SHARE_WRITE,        // Share Mode
@@ -220,14 +209,13 @@ int main(int argc, char **argv) {
                         NULL);                  // Handle to template
 
     if (!readBootSector(device)) {
-        std::cout << "Failed to read disk\n";
+        std::wcout << "Failed to read disk\n";
         return -1;
     } else if (pFat_boot->bootable_signature == 0xAA55)
-        std::cout << "Bootable signature found ! Success!!!\n";
+        std::wcout << "Bootable signature found ! Success!!!\n";
     if (!readRDET(device)) {
-        std::cout << "Failed to read RDET";
+        std::wcout << "Failed to read RDET";
         return -1;
     }
-
     return 0;
 }

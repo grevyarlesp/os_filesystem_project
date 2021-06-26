@@ -10,7 +10,8 @@ class FAT32_Reader : public Filesystem_Reader {
 public:
     explicit FAT32_Reader(HANDLE device);
     void printCurrentDirectory() override;
-    void openItem();
+    void openItem(int item_number);
+    void printBootInformation();
 private:
     std::vector<Item*> v_items;
     pFat_BS_T p_boot;
@@ -25,6 +26,7 @@ private:
     bool readFat();
     bool readDirectory(unsigned long start_sector, std::vector<Item*> &v);
     bool enterDirectory(unsigned int cluster);
+
     ~FAT32_Reader();
 
 };

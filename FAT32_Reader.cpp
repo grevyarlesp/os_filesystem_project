@@ -155,6 +155,32 @@ void FAT32_Reader::printCurrentDirectory() {
     }
 }
 
-void FAT32_Reader::openItem() {
+void FAT32_Reader::openItem(int item_number) {
+    if (v_items[item_number]->isDirectory()) {
+        enterDirectory(v_items[item_number]->getFistCluster());
+    } else {
+
+    }
+}
+
+void FAT32_Reader::printBootInformation() {
+    std::wcout << "OEM NAME: ";
+    for (int i = 0; i < 8; ++i)
+        std::wcout << (char) p_boot->oem_name[i] ;
+    std::wcout << '\n';
+    std::wcout << "Bytes per sector: " << p_boot->bytes_per_sector << '\n';
+    std::wcout << "Sector per cluster: " << (int)p_boot->sectors_per_cluster << '\n';
+    std::wcout << "Number of sectors reserved for boot: " << p_boot->reserved_sector_count << '\n';
+    std::wcout << "Number of tables: " << p_boot->table_count << '\n';
+    std::wcout << "Media type: " << p_boot->media_type << '\n';
+    std::wcout << "Sectors per track: " << p_boot->sectors_per_track << '\n';
+    std::wcout << "Head side count: " << p_boot->head_side_count << '\n';
+    std::wcout << "Hidden sectors count: " << p_boot->hidden_sector_count << '\n';
+    std::wcout << "Total sectors: " << p_boot->total_sectors_32 << '\n';
+    std::wcout << "Table size FAT32: " << p_boot->table_size_32 << '\n';
+    std::wcout << "Extended flags: " << p_boot->flags << '\n';
+    std::wcout << "Fat version: " << p_boot->fat_version << '\n';
+    std::wcout << "First root cluster: " << p_boot->root_cluster_number << '\n';
+    std::wcout << "Backup BS sector: " << p_boot->backup_boot_sector << '\n';
 
 }

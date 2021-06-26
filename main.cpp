@@ -25,6 +25,9 @@ int main(int argc, char **argv) {
                         nullptr);                  // Handle to template
 
     Filesystem_Reader* fat32_reader = new FAT32_Reader(device);
+    fat32_reader->printBootInformation();
     fat32_reader->printCurrentDirectory();
+    fat32_reader->openItem(6);
+
     return 0;
 }

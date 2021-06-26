@@ -74,6 +74,8 @@ protected:
 public:
     Filesystem_Reader(HANDLE device);
     virtual void printCurrentDirectory() = 0;
+    virtual void openItem(int item_number) = 0;
+    virtual void printBootInformation() = 0;
 
 };
 

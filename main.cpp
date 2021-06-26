@@ -2,9 +2,7 @@
 #include <cstdio>
 #include <iostream>
 #include <string>
-#include <fcntl.h>
 #include <io.h>
-
 #include "FAT32_Reader.h"
 
 HANDLE device;
@@ -18,7 +16,7 @@ void hexdump(BYTE *buffer, int num) {
 
 int main(int argc, char **argv) {
     _setmode(_fileno(stdout), 0x00020000); // _O_U16TEXT
-    device = CreateFile("\\\\.\\F:",    // Drive to open
+    device = CreateFile(R"(\\.\F:)",    // Drive to open
                         GENERIC_READ,           // Access mode
                         FILE_SHARE_READ | FILE_SHARE_WRITE,        // Share Mode
                         nullptr,                   // Security Descriptor
@@ -26,7 +24,7 @@ int main(int argc, char **argv) {
                         0,                      // File attributes
                         nullptr);                  // Handle to template
 
-    Filesystem_Reader fat32_reader = new FAT32_Reader(device);
-
+    Filesystem_Reader* fat32_reader = new FAT32_Reader(device);
+    fat32_reader->printCurrentDirectory();
     return 0;
 }

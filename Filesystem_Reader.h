@@ -5,7 +5,7 @@
 #include <iostream>
 #include <string>
 
-void printStr(const char *s, int l, int num);
+void printStr(std::wstring& ws, const char *s, int l, int num);
 
 #pragma pack(1)
 typedef struct fat_BS {
@@ -73,6 +73,7 @@ protected:
 
 public:
     Filesystem_Reader(HANDLE device);
+    virtual void printCurrentDirectory() = 0;
 
 };
 

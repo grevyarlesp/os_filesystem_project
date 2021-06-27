@@ -32,7 +32,7 @@ typedef struct fat_BS {
     unsigned short backup_boot_sector;
     uint8_t reserved[12];
     uint8_t disk_number;
-    uint8_t __reserved; // Flags for Windows NT, or reserved
+    uint8_t _reserved; // Flags for Windows NT, or reserved
     uint8_t signature;
     unsigned int volume_id_serial;
     char volume_label[11];
@@ -70,14 +70,11 @@ typedef struct LongFileName {
 class Filesystem_Reader {
 protected:
     HANDLE device;
-
 public:
-    Filesystem_Reader(HANDLE device);
+    explicit Filesystem_Reader(HANDLE device);
     virtual void printCurrentDirectory() = 0;
     virtual void openItem(int item_number) = 0;
     virtual void printBootInformation() = 0;
-
 };
-
 
 #endif //FILESYSTEM_VIEWER_FILESYSTEM_READER_H

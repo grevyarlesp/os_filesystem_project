@@ -8,26 +8,29 @@ bool FAT32_Reader:: readBootSector() {
 }
 
 FAT32_Reader::FAT32_Reader(HANDLE device): Filesystem_Reader(device) {
-    prev_sector = 0;
+    prev_cluster = 0;
     if (! readBootSector()) {
         std::wcout << "Failed to read FAT32 boot sector\n";
         return;
     }
-
     first_data_sector =
             p_boot->reserved_sector_count + (p_boot->table_count * p_boot->table_size_32) + 0; // + root_dir_sector = 0
+    first_fat_sector = p_boot->reserved_sector_count;
     if (! readRoot()) {
         std::wcout << "Failed to read FAT32 root directory\n";
         return;
     }
-    if (! readFat()) {
-        std::wcout << "Failed to read the file allocation table\n";
-        return;
-    }
 }
 
-bool FAT32_Reader::readFat() {
-    return true;
+unsigned int FAT32_Reader::readFat(unsigned int active_cluster) {
+    auto sector_size = p_boot->bytes_per_sector;
+    unsigned char FAT_table[sector_size];
+    unsigned int fat_offset = active_cluster * 4;
+    unsigned int fat_sector = first_fat_sector + (fat_offset  / sector_size);
+    unsigned int ent_offset = fat_offset / sector_size;
+    readSector(fat_sector, 1, FAT_table);
+    unsigned int table_value = *(unsigned int*)&FAT_table[ent_offset] & 0x0FFFFFFF;
+    return table_value;
 }
 
 bool FAT32_Reader::readSector(unsigned int sectorToRead, int sectorCount, uint8_t *sector) {
@@ -42,103 +45,108 @@ bool FAT32_Reader::readRoot() {
     unsigned long current_sector = first_data_sector;
     unsigned int root_cluster = p_boot->root_cluster_number;
     unsigned int first_sector_of_cluster = ((root_cluster - 2) * p_boot->sectors_per_cluster) + first_data_sector;
-    this->cur_sector = current_sector;
-    return readDirectory(first_sector_of_cluster, this->v_items);
+
+    this->cur_cluster = root_cluster;
+
+    return readDirectory(root_cluster, this->v_items);
 }
 
 bool FAT32_Reader::enterDirectory(unsigned int cluster) {
     for (auto i : v_items) { delete i; }
-
     v_items.clear();
-    unsigned long sector = first_data_sector + ((cluster - 2) * p_boot->sectors_per_cluster);
-    prev_sector = cur_sector;
-    cur_sector = sector;
-    return readDirectory(sector, this->v_items);
+    prev_cluster = cur_cluster;
+    cur_cluster = cluster;
+    return readDirectory(cluster, this->v_items);
 }
 
-bool FAT32_Reader::readDirectory(unsigned long start_sector, std::vector<Item*>& v) {
-    unsigned int current_sector = start_sector;
+bool FAT32_Reader::readDirectory(uint32_t active_cluster, std::vector<Item*>& v) {
+    unsigned int current_sector;
     DWORD byteCount;
     BYTE *buffer = (BYTE *) malloc(512);
     auto pLongFileName1 = (pLongFileName) malloc(sizeof(LongFileName));
     bool lfn = false;
     bool finished = false;
     auto pDirEntry1 = (pDirEntry) malloc(sizeof(DirEntry));
-    std::wstring tmp[20];
+    std::wstring tmp[256];
     std::wstring tmps;
-    while (!finished) {
-        if (!readSector(current_sector, 1, buffer)) {
-            return false;
-        }
-        int last = -1;
-        for (int i = 0, pos = 0; i < p_boot->bytes_per_sector / sizeof(DirEntry); ++i, pos += sizeof(DirEntry)) {
-            if (buffer[pos] == 0x00) {
-                finished = true;
-                break;
+    uint32_t cnt = p_boot->sectors_per_cluster;
+    while (! finished && active_cluster < 0x0FFFFFF7) { // bad cluster or end of chain
+        current_sector = (active_cluster - 2) * p_boot->sectors_per_cluster + first_data_sector;
+        uint8_t last = 0;
+        while (cnt-- && !finished) {
+            if (!readSector(current_sector, 1, buffer)) {
+                return false;
             }
-            if (buffer[pos] == 0xE5) {
-                // Unused
-                continue;
-            }
-            if (buffer[pos + 11] == 0x0F) { // Long File Name
-                pLongFileName1 = (pLongFileName) (buffer + pos);
-                lfn = true;
-                if (((pLongFileName1->order & 0xF0) >> 4) == 4) last = pLongFileName1->order & 0x0F;
-                int order = (pLongFileName1->order & 0x0F) - 1;
-                for (int i = 0; i < 5; ++i) {
-                    if (pLongFileName1->name[i] == 0xFFFF) {
-                        break;
-                    }
-                    tmp[order].push_back(pLongFileName1->name[i]);
+            for (int i = 0, pos = 0; i < p_boot->bytes_per_sector / sizeof(DirEntry); ++i, pos += sizeof(DirEntry)) {
+                if (buffer[pos] == 0x00) {
+                    finished = true;
+                    break;
                 }
-                for (int i = 0; i < 6; ++i) {
-                    if (pLongFileName1->name2[i] == 0xFFFF) {
-                        break;
-                    }
-                    tmp[order].push_back(pLongFileName1->name2[i]);
+                if (buffer[pos] == 0xE5) {
+                    // Unused
+                    continue;
                 }
-                for (int i = 0; i < 2; ++i) {
-                    if (pLongFileName1->name3[i] == 0xFFFF) {
-                        break;
-                    }
-                    tmp[order].push_back(pLongFileName1->name3[i]);
-                }
-            } else {  // Not Long File Name
                 pDirEntry1 = (pDirEntry) (buffer + pos);
                 uint32_t cluster = (pDirEntry1->first_cluster_high << 16) | (pDirEntry1->first_cluster_low);
                 cluster = cluster & 0x0FFFFFFF; // Ignore the first 4 bits
-                if (lfn) { // Have a long file name in storage
-                    for (int j = 0; j < last; ++j) {
-                        tmps.append(tmp[j]);
-                        tmp[j].clear();
+                if (buffer[pos + 11] == 0x0F) { // Long File Name
+                    pLongFileName1 = (pLongFileName) (buffer + pos);
+                    lfn = true;
+                    // First byte: 0 -> first, 4 -> last
+                    if (pLongFileName1->order & 0x40) { // last long entry
+                        last = pLongFileName1->order ^ 0x40;
                     }
-//                    std::wcout << tmps;
-                    lfn = false;
-//                    std::wcout << '\n';
-                    if (pDirEntry1->attrib==0x10) { // Directory
-                        v.push_back(new Directory(tmps, cluster));
+                    uint8_t order = (pLongFileName1->order & 63) - 1;
+                    for (int i = 0; i < 5; ++i) {
+                        if (pLongFileName1->name[i] == 0xFFFF) {
+                            break;
+                        }
+                        tmp[order].push_back(pLongFileName1->name[i]);
+                    }
+                    for (int i = 0; i < 6; ++i) {
+                        if (pLongFileName1->name2[i] == 0xFFFF) {
+                            break;
+                        }
+                        tmp[order].push_back(pLongFileName1->name2[i]);
+                    }
+                    for (int i = 0; i < 2; ++i) {
+                        if (pLongFileName1->name3[i] == 0xFFFF) {
+                            break;
+                        }
+                        tmp[order].push_back(pLongFileName1->name3[i]);
+                    }
+                } else {  // Not Long File Name
+                    if (lfn) { // Have a long file name in storage
+                        for (int j = 0; j < last; ++j) {
+                            tmps.append(tmp[j]);
+                            tmp[j].clear();
+                        }
+                        lfn = false;
+                        if (pDirEntry1->attrib == 0x10) { // Directory
+                            v.push_back(new Directory(tmps, cluster, pDirEntry1->attrib));
+                        } else {
+                            v.push_back(new File(tmps, cluster, pDirEntry1->size, pDirEntry1->attrib));
+                        }
+                        last = 0;
+                        tmps.clear();
+                        continue;
+                    }
+                    printStr(tmps, pDirEntry1->name, 0, 8);
+                    tmps.push_back('.');
+                    printStr(tmps, pDirEntry1->name, 8, 3);
+                    if (pDirEntry1->attrib == 0x10) { // Directory
+                        v.push_back(new Directory(tmps, cluster, pDirEntry1->attrib));
                     } else {
-                        v.push_back(new File(tmps, cluster, pDirEntry1->size));
+                        v.push_back(new File(tmps, cluster, pDirEntry1->size, pDirEntry1->attrib));
                     }
-
                     tmps.clear();
-                    continue;
                 }
-                printStr(tmps, pDirEntry1->name, 0, 8);
-                tmps.push_back('.');
-                printStr(tmps, pDirEntry1->name, 8, 3);
-//                std::wcout << tmps;
-//                std::wcout << '\n';
-                if (pDirEntry1->attrib==0x10) { // Directory
-                    v.push_back(new Directory(tmps, cluster));
-                } else {
-                    v.push_back(new File(tmps, cluster, pDirEntry1->size));
-                }
-                tmps.clear();
             }
+            current_sector += 1;
         }
-        current_sector += 1;
+        active_cluster = readFat(active_cluster);
     }
+
     free(buffer);
     return true;
 }
@@ -147,17 +155,22 @@ bool FAT32_Reader::readDirectory(unsigned long start_sector, std::vector<Item*>&
 FAT32_Reader::~FAT32_Reader() {
     free(p_boot);
     free(pDir);
+    delete[] fat_table;
 }
 
 void FAT32_Reader::printCurrentDirectory() {
     for (size_t i = 0; i < v_items.size(); ++i) {
-        std::wcout << i << ' ' <<  v_items[i]->getName() << '\n';
+        std::wcout << i << L' ' <<  v_items[i]->getName() << L'|' << v_items[i]->getSize() << L'|' << v_items[i]->getAttribute() << '\n'; ;
     }
+}
+
+void FAT32_Reader::readCurrentFile(uint32_t active_cluster) {
+
 }
 
 void FAT32_Reader::openItem(int item_number) {
     if (v_items[item_number]->isDirectory()) {
-        enterDirectory(v_items[item_number]->getFistCluster());
+        enterDirectory(v_items[item_number]->getFirstCluster());
     } else {
 
     }
@@ -182,5 +195,6 @@ void FAT32_Reader::printBootInformation() {
     std::wcout << "Fat version: " << p_boot->fat_version << '\n';
     std::wcout << "First root cluster: " << p_boot->root_cluster_number << '\n';
     std::wcout << "Backup BS sector: " << p_boot->backup_boot_sector << '\n';
-
 }
+
+

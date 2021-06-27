@@ -12,8 +12,8 @@ void printStr(std::wstring &ws, const char *s, int l, int num) {
         }
     }
     auto* wc = new wchar_t[num + 1];
+    mbstowcs(wc, s + l, num);
     wc[num] = L'\0';
-    mbstowcs(wc, s + l, num + 1);
     for (int i = 0; i < num; ++i) {
         ws.push_back(wc[i]);
     }

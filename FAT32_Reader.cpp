@@ -24,12 +24,13 @@ FAT32_Reader::FAT32_Reader(HANDLE device): Filesystem_Reader(device) {
 
 unsigned int FAT32_Reader::readFat(unsigned int active_cluster) {
     auto sector_size = p_boot->bytes_per_sector;
-    unsigned char FAT_table[sector_size];
+    unsigned char* FAT_table = (unsigned char*) malloc(sector_size);
     unsigned int fat_offset = active_cluster * 4;
     unsigned int fat_sector = first_fat_sector + (fat_offset  / sector_size);
-    unsigned int ent_offset = fat_offset / sector_size;
+    unsigned int ent_offset = fat_offset % sector_size;
     readSector(fat_sector, 1, FAT_table);
     unsigned int table_value = *(unsigned int*)&FAT_table[ent_offset] & 0x0FFFFFFF;
+    free(FAT_table);
     return table_value;
 }
 
@@ -44,10 +45,7 @@ bool FAT32_Reader::readRoot() {
     unsigned int root_dir_sector = 0;
     unsigned long current_sector = first_data_sector;
     unsigned int root_cluster = p_boot->root_cluster_number;
-    unsigned int first_sector_of_cluster = ((root_cluster - 2) * p_boot->sectors_per_cluster) + first_data_sector;
-
     this->cur_cluster = root_cluster;
-
     return readDirectory(root_cluster, this->v_items);
 }
 
@@ -69,10 +67,11 @@ bool FAT32_Reader::readDirectory(uint32_t active_cluster, std::vector<Item*>& v)
     auto pDirEntry1 = (pDirEntry) malloc(sizeof(DirEntry));
     std::wstring tmp[256];
     std::wstring tmps;
-    uint32_t cnt = p_boot->sectors_per_cluster;
-    while (! finished && active_cluster < 0x0FFFFFF7) { // bad cluster or end of chain
+    uint32_t cnt;
+    while (active_cluster < 0x0FFFFFF7) { // bad cluster or end of chain
         current_sector = (active_cluster - 2) * p_boot->sectors_per_cluster + first_data_sector;
         uint8_t last = 0;
+        cnt = p_boot->sectors_per_cluster;
         while (cnt-- && !finished) {
             if (!readSector(current_sector, 1, buffer)) {
                 return false;
@@ -160,19 +159,49 @@ FAT32_Reader::~FAT32_Reader() {
 
 void FAT32_Reader::printCurrentDirectory() {
     for (size_t i = 0; i < v_items.size(); ++i) {
-        std::wcout << i << L' ' <<  v_items[i]->getName() << L'|' << v_items[i]->getSize() << L'|' << v_items[i]->getAttribute() << '\n'; ;
+        std::wcout << i << L' ' <<  v_items[i]->getName() << L'|' << v_items[i]->getSize() << L'|' << v_items[i]->getAttribute() << L'|' << (uint32_t) p_boot->sectors_per_cluster * (v_items[i]->getFirstCluster()-2) + first_data_sector << '\n';
     }
 }
 
 void FAT32_Reader::readCurrentFile(uint32_t active_cluster) {
+    unsigned int current_sector;
+    DWORD byteCount;
+    unsigned char *buffer = (unsigned char *) malloc(512);
+    wchar_t *buffer_uni = new wchar_t[512];
+    uint32_t cnt = p_boot->sectors_per_cluster;
+    current_sector = (active_cluster - 2) * p_boot->sectors_per_cluster + first_data_sector;
+    bool finished = false;
 
+    while (active_cluster < 0x0FFFFFF7) { // bad cluster or end of chain
+        current_sector = (active_cluster - 2) * p_boot->sectors_per_cluster + first_data_sector;
+        cnt = p_boot->sectors_per_cluster;
+        while (cnt--) {
+            if (!readSector(current_sector, 1, buffer)) {
+                std::wcout << "Error while reading sector";
+                return;
+            }
+            current_sector += 1;
+            for (int i = 0; i < 512; ++i) {
+                if (buffer[i] == 0x00) {
+                    finished = true;
+                    break;
+                }
+                std::wcout << (char) buffer[i];
+            }
+            if (finished) break;
+        }
+        if (finished) break;
+        active_cluster = readFat(active_cluster);
+    }
+    free(buffer);
+    delete[] buffer_uni;
 }
 
 void FAT32_Reader::openItem(int item_number) {
     if (v_items[item_number]->isDirectory()) {
         enterDirectory(v_items[item_number]->getFirstCluster());
     } else {
-
+        readCurrentFile(v_items[item_number]->getFirstCluster());
     }
 }
 

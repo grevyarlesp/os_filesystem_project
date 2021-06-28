@@ -35,8 +35,7 @@ private:
     bool enterDirectory(unsigned int cluster);
     ~FAT32_Reader();
 
-
-    void readCurrentFile(uint32_t first_cluster);
+    void readCurrentFile(uint32_t active_cluster, uint32_t bytes_to_read, bool bin,const std::string& ext);
 };
 
 

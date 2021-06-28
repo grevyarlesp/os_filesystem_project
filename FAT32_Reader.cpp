@@ -1,4 +1,5 @@
 #include "FAT32_Reader.h"
+#include <fstream>
 
 bool FAT32_Reader:: readBootSector() {
     p_boot = (pFat_BS_T) malloc(512);
@@ -115,6 +116,8 @@ bool FAT32_Reader::readDirectory(uint32_t active_cluster, std::vector<Item*>& v)
                         tmp[order].push_back(pLongFileName1->name3[i]);
                     }
                 } else {  // Not Long File Name
+                    std::string ext;
+                    for (int i = 8; i < 11; ++i) ext.push_back(pDirEntry1->name[i]);
                     if (lfn) { // Have a long file name in storage
                         for (int j = 0; j < last; ++j) {
                             tmps.append(tmp[j]);
@@ -124,7 +127,7 @@ bool FAT32_Reader::readDirectory(uint32_t active_cluster, std::vector<Item*>& v)
                         if (pDirEntry1->attrib == 0x10) { // Directory
                             v.push_back(new Directory(tmps, cluster, pDirEntry1->attrib));
                         } else {
-                            v.push_back(new File(tmps, cluster, pDirEntry1->size, pDirEntry1->attrib));
+                            v.push_back(new File(tmps, cluster, pDirEntry1->size, pDirEntry1->attrib, ext));
                         }
                         last = 0;
                         tmps.clear();
@@ -136,7 +139,7 @@ bool FAT32_Reader::readDirectory(uint32_t active_cluster, std::vector<Item*>& v)
                     if (pDirEntry1->attrib == 0x10) { // Directory
                         v.push_back(new Directory(tmps, cluster, pDirEntry1->attrib));
                     } else {
-                        v.push_back(new File(tmps, cluster, pDirEntry1->size, pDirEntry1->attrib));
+                        v.push_back(new File(tmps, cluster, pDirEntry1->size, pDirEntry1->attrib, ext));
                     }
                     tmps.clear();
                 }
@@ -165,36 +168,47 @@ void FAT32_Reader::printCurrentDirectory() {
     std::wcout << L"-------------------------------\n";
 }
 
-void FAT32_Reader::readCurrentFile(uint32_t active_cluster) {
+void FAT32_Reader::readCurrentFile(uint32_t active_cluster, uint32_t bytes_to_read, bool bin, const std::string& ext) {
     unsigned int current_sector;
     DWORD byteCount;
-    unsigned char *buffer = (unsigned char *) malloc(512);
-    wchar_t *buffer_uni = new wchar_t[512];
+    unsigned int cluster_sz = p_boot->sectors_per_cluster * p_boot->bytes_per_sector;
+    unsigned char *buffer = new unsigned char[cluster_sz];
     uint32_t cnt = p_boot->sectors_per_cluster;
     current_sector = (active_cluster - 2) * p_boot->sectors_per_cluster + first_data_sector;
     bool finished = false;
+    std::ofstream wf;
+    if (ext == "TXT") bin = false;
+    std::string filename = "temp." + ext;
+
+    wf.open(filename, std::ios::out | std::ios::binary);
 
     std::wstring tmp;
     while (active_cluster < 0x0FFFFFF7) { // bad cluster or end of chain
         current_sector = (active_cluster - 2) * p_boot->sectors_per_cluster + first_data_sector;
         cnt = p_boot->sectors_per_cluster;
-        while (cnt--) {
-            if (!readSector(current_sector, 1, buffer)) {
-                std::wcout << "Error while reading sector";
-                return;
-            }
-            current_sector += 1;
-            for (int i = 0; i < 512; ++i) {
-                tmp.push_back((char) buffer[i]);
-            }
+        if (!readSector(current_sector, p_boot->sectors_per_cluster, buffer)) {
+            std::wcout << "Error while reading sector";
+            return;
         }
+        current_sector += 1;
+        if (!bin){
+            for (int i = 0; i < std::min(bytes_to_read, (uint32_t) cluster_sz); ++i) {
+                std::wcout << (char) buffer[i];
+            }
+        } else {
+            wf.write((char *) buffer, (bytes_to_read < cluster_sz ? bytes_to_read : cluster_sz));
+        }
+        if (bytes_to_read < cluster_sz) {
+            break;
+        } else bytes_to_read -= cluster_sz;
         active_cluster = readFat(active_cluster);
     }
     while (! tmp.empty() && tmp.back() == 0x00)
         tmp.pop_back();
     free(buffer);
-    delete[] buffer_uni;
-//    std::wcout << tmp << '\n';
+    wf.close();
+    if (bin) ShellExecute(nullptr, nullptr, filename.c_str(), nullptr, nullptr , SW_SHOW );
+    else std::wcout << '\n';
 }
 
 void FAT32_Reader::openItem(int item_number) {
@@ -214,7 +228,9 @@ void FAT32_Reader::openItem(int item_number) {
         enterDirectory(v_items[item_number]->getFirstCluster());
         this->printCurrentDirectory();
     } else {
-        readCurrentFile(v_items[item_number]->getFirstCluster());
+        readCurrentFile(v_items[item_number]->getFirstCluster(),
+                        v_items[item_number]->getSize(), true,
+                        v_items[item_number]->getExt());
     }
 }
 

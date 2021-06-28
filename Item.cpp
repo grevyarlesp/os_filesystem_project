@@ -8,6 +8,10 @@ uint32_t File::getSize() {
     return this->size;
 }
 
+std::string File::getExt() {
+    return ext;
+}
+
 std::wstring Item::getAttribute() {
     std::wstring ans;
     if (this->attrib & 0x01)
@@ -38,8 +42,13 @@ Directory::Directory(std::wstring ws, unsigned int first_cluster, uint8_t attrib
     this->attrib = attrib;
 }
 
+std::string Directory::getExt() {
+    return "";
+}
+
 Directory::~Directory() = default;
 
 std::wstring Item::getName() {
     return this->name;
 }
+

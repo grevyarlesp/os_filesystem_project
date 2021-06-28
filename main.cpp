@@ -27,9 +27,14 @@ int main(int argc, char **argv) {
     Filesystem_Reader* fat32_reader = new FAT32_Reader(device);
     fat32_reader->printBootInformation();
     fat32_reader->printCurrentDirectory();
-    fat32_reader->openItem(4);
-//    fat32_reader->printCurrentDirectory();
+    unsigned int k;
+    while (true) {
+        std::wcout << "Enter the item number to open: ";
+        std::wcin >> k;
+        fat32_reader->openItem(k);
+        std::wcout << "DONE\n";
+    }
 
-//    fat32_reader->openItem(6);
+    fat32_reader->openItem(1);
     return 0;
 }

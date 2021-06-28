@@ -9,27 +9,20 @@ uint32_t File::getSize() {
 }
 
 std::wstring Item::getAttribute() {
-    switch (this->attrib) {
-        case 0x01:
-            return L"READ_ONLY";
-            break;
-        case 0x02:
-            return L"HIDDEN";
-            break;
-        case 0x04:
-            return L"SYSTEM";
-            break;
-        case 0x08:
-            return L"VOLUME_ID";
-            break;
-        case 0x10:
-            return L"DIRECTORY";
-            break;
-        case 0x20:
-            return L"ARCHIVE";
-            break;
-    }
-    return L"No attribute";
+    std::wstring ans;
+    if (this->attrib & 0x01)
+        ans += L"READ_ONLY ";
+    if (this->attrib & 0x02)
+        ans += L"HIDDEN ";
+    if (this->attrib & 0x04)
+        ans += L"SYSTEM ";
+    if (this->attrib & 0x08)
+        ans += L"VOLUME_ID ";
+    if (this->attrib & 0x10)
+        ans += L"DIRECTORY ";
+    if (this->attrib & 0x20)
+        ans += L"ARCHIVE ";
+    return ans;
 }
 
 File::~File() = default;

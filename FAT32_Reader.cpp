@@ -8,7 +8,7 @@ bool FAT32_Reader:: readBootSector() {
 }
 
 FAT32_Reader::FAT32_Reader(HANDLE device): Filesystem_Reader(device) {
-    prev_cluster = 0;
+    s_dir.push(2);
     if (! readBootSector()) {
         std::wcout << "Failed to read FAT32 boot sector\n";
         return;
@@ -158,9 +158,11 @@ FAT32_Reader::~FAT32_Reader() {
 }
 
 void FAT32_Reader::printCurrentDirectory() {
+    std::wcout << L"-------------------------------\n";
     for (size_t i = 0; i < v_items.size(); ++i) {
         std::wcout << i << L' ' <<  v_items[i]->getName() << L'|' << v_items[i]->getSize() << L'|' << v_items[i]->getAttribute() << L'|' << (uint32_t) p_boot->sectors_per_cluster * (v_items[i]->getFirstCluster()-2) + first_data_sector << '\n';
     }
+    std::wcout << L"-------------------------------\n";
 }
 
 void FAT32_Reader::readCurrentFile(uint32_t active_cluster) {
@@ -172,6 +174,7 @@ void FAT32_Reader::readCurrentFile(uint32_t active_cluster) {
     current_sector = (active_cluster - 2) * p_boot->sectors_per_cluster + first_data_sector;
     bool finished = false;
 
+    std::wstring tmp;
     while (active_cluster < 0x0FFFFFF7) { // bad cluster or end of chain
         current_sector = (active_cluster - 2) * p_boot->sectors_per_cluster + first_data_sector;
         cnt = p_boot->sectors_per_cluster;
@@ -182,24 +185,34 @@ void FAT32_Reader::readCurrentFile(uint32_t active_cluster) {
             }
             current_sector += 1;
             for (int i = 0; i < 512; ++i) {
-                if (buffer[i] == 0x00) {
-                    finished = true;
-                    break;
-                }
-                std::wcout << (char) buffer[i];
+                tmp.push_back((char) buffer[i]);
             }
-            if (finished) break;
         }
-        if (finished) break;
         active_cluster = readFat(active_cluster);
     }
+    while (! tmp.empty() && tmp.back() == 0x00)
+        tmp.pop_back();
     free(buffer);
     delete[] buffer_uni;
+//    std::wcout << tmp << '\n';
 }
 
 void FAT32_Reader::openItem(int item_number) {
+    if (item_number >= v_items.size() || item_number < 0) return;
+    if (item_number == 0 && s_dir.top() != 2) {
+        return;
+    }
+    if (item_number == 1 && s_dir.top() != 2)  {
+        s_dir.pop();
+        enterDirectory(s_dir.top());
+        this->printCurrentDirectory();
+        return;
+
+    }
     if (v_items[item_number]->isDirectory()) {
+        s_dir.push(v_items[item_number]->getFirstCluster());
         enterDirectory(v_items[item_number]->getFirstCluster());
+        this->printCurrentDirectory();
     } else {
         readCurrentFile(v_items[item_number]->getFirstCluster());
     }

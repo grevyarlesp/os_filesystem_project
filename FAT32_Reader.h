@@ -4,6 +4,7 @@
 #include "Filesystem_Reader.h"
 #include "Item.h"
 #include <vector>
+#include <stack>
 #include <unordered_map>
 
 class FAT32_Reader : public Filesystem_Reader {
@@ -20,6 +21,7 @@ private:
 
     pFat_BS_T p_boot;
     pDirEntry pDir;
+    std::stack<uint32_t> s_dir;
     unsigned int prev_cluster;
     unsigned int cur_cluster;
     unsigned long first_data_sector;

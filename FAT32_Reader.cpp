@@ -213,7 +213,8 @@ void FAT32_Reader::readCurrentFile(uint32_t active_cluster, uint32_t bytes_to_re
 
 void FAT32_Reader::openItem(int item_number) {
     if (item_number >= v_items.size() || item_number < 0) return;
-    if (item_number == 0 && s_dir.top() != 2) {
+    if (item_number == 0) {
+        this->printCurrentDirectory();
         return;
     }
     if (item_number == 1 && s_dir.top() != 2)  {

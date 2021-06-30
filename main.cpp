@@ -4,6 +4,7 @@
 #include <string>
 #include <io.h>
 #include "FAT32_Reader.h"
+#include "NTFS_Reader.h"
 
 HANDLE device;
 
@@ -23,18 +24,22 @@ int main(int argc, char **argv) {
                         OPEN_EXISTING,          // How to create
                         0,                      // File attributes
                         nullptr);                  // Handle to template
+    Filesystem_Reader *pReader;
+    if (false) {
+        pReader = new FAT32_Reader(device);
+        pReader->printBootInformation();
+        pReader->printCurrentDirectory();
+        unsigned int k;
+        while (true) {
+            std::wcout << "Enter the item number to open: ";
+            std::wcin >> k;
+            pReader->openItem(k);
+            std::wcout << "DONE\n";
+        }
+    } else {
+        pReader = new NTFS_Reader(device);
+        pReader->printBootInformation();
 
-    Filesystem_Reader* fat32_reader = new FAT32_Reader(device);
-    fat32_reader->printBootInformation();
-    fat32_reader->printCurrentDirectory();
-    unsigned int k;
-    while (true) {
-        std::wcout << "Enter the item number to open: ";
-        std::wcin >> k;
-        fat32_reader->openItem(k);
-        std::wcout << "DONE\n";
     }
-
-    fat32_reader->openItem(1);
     return 0;
 }
